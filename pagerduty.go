@@ -67,7 +67,7 @@ func SendIncident(config *Config, description string, incidentKey string, attemp
 	case 400:
 		log.Printf("Invalid arguments. Server said: %s", string(responseBody))
 	case 401:
-		log.Printf("Authentication was invalid, check your api key is correct")
+		log.Printf("Authentication was invalid, check your api key is correct. Server said: %s", string(responseBody))
 	case 403:
 		log.Printf("You API key does not allow you to create incidents, please contact your administrator")
 	case 429:

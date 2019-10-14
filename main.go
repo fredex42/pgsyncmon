@@ -24,8 +24,11 @@ func MakeIncidentKey(recordType string) string {
 
 func main() {
 	var configFilePath string
+	var testFlag bool
 
 	flag.StringVar(&configFilePath, "config", "pgsyncmon.yml", "Load configuration from this (yaml-formatted) file")
+	flag.BoolVar(&testFlag, "test", false, "Send a test alert to pagerduty")
+
 	flag.Parse()
 
 	log.Print("pgsyncmon, Andy Gallagher 2019. See https://github.com/fredex42/pgsyncmon for source code and details.")
@@ -41,30 +44,42 @@ func main() {
 		cfg.PostgresUser = "postgres"
 	}
 
-	result, checkErr := TestRecoveryStatus(getUser(cfg.PostgresUser), false)
-
-	if checkErr != nil {
-		log.Fatal("Could not check current status")
+	if testFlag == true {
+		log.Print("Sending test message to PagerDuty")
+		sendErr := SendIncident(cfg, "Test message", "test", 0)
+		if sendErr != nil {
+			log.Printf("Could not send message: %s", sendErr)
+			os.Exit(1)
+		} else {
+			log.Print("Test message sent successfully")
+			os.Exit(0)
+		}
 	} else {
-		spew.Dump(result)
-	}
+		result, checkErr := TestRecoveryStatus(getUser(cfg.PostgresUser), false)
 
-	myHostName, _ := os.Hostname()
-	lag := result.Lag()
+		if checkErr != nil {
+			log.Fatal("Could not check current status")
+		} else {
+			spew.Dump(result)
+		}
 
-	if result.IsInRecovery == false {
-		log.Print("Standby database problem - not in recovery mode")
-		sendErr := SendIncident(cfg, fmt.Sprintf("Standby database lost recovery on %s", myHostName), MakeIncidentKey("lost"), 0)
-		if sendErr != nil {
-			os.Exit(1)
+		myHostName, _ := os.Hostname()
+		lag := result.Lag()
+
+		if result.IsInRecovery == false {
+			log.Print("Standby database problem - not in recovery mode")
+			sendErr := SendIncident(cfg, fmt.Sprintf("Standby database lost recovery on %s", myHostName), MakeIncidentKey("lost"), 0)
+			if sendErr != nil {
+				os.Exit(1)
+			}
+		} else if lag.Upper > 0 || lag.Lower > 100 {
+			log.Print("Standby database problem - recovery is lagging")
+			sendErr := SendIncident(cfg, fmt.Sprintf("Standby database has a significant recovery lag on %s", myHostName), MakeIncidentKey("lag"), 0)
+			if sendErr != nil {
+				os.Exit(1)
+			}
 		}
-	} else if lag.Upper > 0 || lag.Lower > 100 {
-		log.Print("Standby database problem - recovery is lagging")
-		sendErr := SendIncident(cfg, fmt.Sprintf("Standby database has a significant recovery lag on %s", myHostName), MakeIncidentKey("lag"), 0)
-		if sendErr != nil {
-			os.Exit(1)
-		}
+		log.Print("Standby database status is OK")
+		os.Exit(0)
 	}
-	log.Print("Standby database status is OK")
-	os.Exit(0)
 }
